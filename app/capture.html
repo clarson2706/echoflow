@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8"><title>EchoFlow capture</title>
+<script>
+// Hidden page that owns the microphone and (optionally) the computer's audio loopback.
+// It mixes the sources to 16 kHz mono float32 and hands the PCM to the main process.
+const { ipcRenderer } = require("electron");
+
+let ctx, node, streams = [], chunks = [], total = 0, mode = "dictate", flushTimer = null, idleTimer = null, warm = null;
+
+async function openStreams(mic, system) {
+  const out = [];
+  if (mic) {
+    out.push(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }));
+  }
+  if (system) {
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    s.getVideoTracks().forEach((t) => t.stop());
+    if (!s.getAudioTracks().length) throw new Error("No computer audio is available to capture.");
+    out.push(new MediaStream(s.getAudioTracks()));
+  }
+  return out;
+}
+
+async function start({ mic, system, mode: m }) {
+  mode = m; chunks = []; total = 0; clearTimeout(idleTimer);
+  if (!ctx) {
+    ctx = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
+    await ctx.audioWorklet.addModule("worklet.js");
+  }
+  await ctx.resume();
+  // reuse the open mic if it was used a moment ago and the sources match
+  if (warm && warm.key === `${mic}|${system}`) { streams = warm.streams; }
+  else { releaseStreams(); streams = await openStreams(mic, system); }
+  warm = null;
+  const mix = ctx.createGain();
+  mix.gain.value = streams.length > 1 ? 0.65 : 1;
+  const sources = streams.map((s) => { const n = ctx.createMediaStreamSource(s); n.connect(mix); return n; });
+  node = new AudioWorkletNode(ctx, "collector");
+  mix.connect(node);
+  node.port.onmessage = (e) => {
+    const block = e.data;
+    chunks.push(block); total += block.length;
+    let sum = 0; for (let i = 0; i < block.length; i += 8) sum += block[i] * block[i];
+    ipcRenderer.send("cap:level", Math.sqrt(sum / (block.length / 8)));
+  };
+  node._cleanup = () => { sources.forEach((n) => n.disconnect()); mix.disconnect(); node.disconnect(); node.port.close(); };
+  if (mode === "note") flushTimer = setInterval(flush, 5000);
+  return { ready: true, key: `${mic}|${system}` };
+}
+
+function takePcm() {
+  const out = new Float32Array(total); let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  chunks = []; total = 0; return out;
+}
+function flush() {
+  if (!total) return;
+  const pcm = takePcm();
+  ipcRenderer.send("cap:chunk", pcm.buffer);
+}
+function releaseStreams() { streams.forEach((s) => s.getTracks().forEach((t) => t.stop())); streams = []; }
+
+function stop(keepWarm, key) {
+  clearInterval(flushTimer);
+  if (node) { node._cleanup(); node = null; }
+  const pcm = takePcm();
+  if (keepWarm && streams.length) { warm = { streams, key }; idleTimer = setTimeout(() => { releaseStreams(); warm = null; }, 20000); }
+  else { releaseStreams(); }
+  return pcm;
+}
+
+let curKey = "";
+ipcRenderer.on("cap:start", async (_e, opts) => {
+  try { const r = await start(opts); curKey = r.key; ipcRenderer.send("cap:ready", { ok: true }); }
+  catch (err) { releaseStreams(); ipcRenderer.send("cap:ready", { ok: false, error: String(err.message || err) }); }
+});
+ipcRenderer.on("cap:stop", () => {
+  const keepWarm = mode === "dictate";
+  const pcm = stop(keepWarm, curKey);
+  ipcRenderer.send("cap:done", pcm.buffer);
+});
+</script>

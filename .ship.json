@@ -1,0 +1,21 @@
+{
+  "name": "EchoFlow",
+  "build": [
+    "npm run dist"
+  ],
+  "outDir": "dist-out",
+  "artifacts": [
+    "EchoFlow-Setup-{v}.exe",
+    "EchoFlow-Setup-{v}.exe.blockmap",
+    "latest.yml"
+  ],
+  "feedUrl": "https://github.com/clarson2706/echoflow/releases/latest/download/latest.yml",
+  "tests": [
+    "cd engine && uv run pytest tests -q",
+    "node tests/e2e.js"
+  ],
+  "versionFiles": [
+    "package.json"
+  ],
+  "notes": "Single version source is package.json; the engine reads it from the shell at runtime. Public repo, releases on the same repo."
+}

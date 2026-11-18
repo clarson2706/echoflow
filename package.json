@@ -1,0 +1,80 @@
+{
+  "name": "echoflow",
+  "version": "0.1.0",
+  "description": "Hold a key, speak, get clean text in any app. Local-first voice dictation and note taking.",
+  "main": "app/main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:engine": "node scripts/build-engine.js",
+    "dist": "npm run build:engine && electron-builder --win --publish never --config.directories.output=dist-out",
+    "dist:app": "electron-builder --win --publish never --config.directories.output=dist-out",
+    "test:e2e": "node tests/e2e.js"
+  },
+  "author": "EchoFlow contributors",
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "koffi": "^3.3.8",
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.18.0",
+    "playwright": "^1.65.1",
+    "electron": "45.3.4"
+  },
+  "homepage": "https://github.com/clarson2706/echoflow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clarson2706/echoflow.git"
+  },
+  "build": {
+    "appId": "com.echoflow.app",
+    "productName": "EchoFlow",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist-out"
+    },
+    "files": [
+      "app/**",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "ui",
+        "to": "ui"
+      },
+      {
+        "from": "engine-dist/python",
+        "to": "engine/python"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "clarson2706",
+        "repo": "echoflow"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "EchoFlow",
+      "artifactName": "EchoFlow-Setup-${version}.${ext}"
+    }
+  }
+}
